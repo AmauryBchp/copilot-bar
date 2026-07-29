@@ -108,11 +108,16 @@ state_color() {
 }
 
 state_icon() {
+  # Color emoji glyphs, not the `color=` line attribute: GNOME Shell's own
+  # panel widget ignores `color=` for the top-bar button text (only dropdown
+  # items honor it — see README's "Known limitations"), but a color emoji is
+  # rendered as an actual colored pixmap, unaffected by that restriction, so
+  # this is how the bar itself gets any color at all.
   case "$1" in
-    needs_input)   printf '●\n' ;;
-    just_finished) printf '○\n' ;;
-    working)       printf '◐\n' ;;
-    *)             printf '·\n' ;;
+    needs_input)   printf '🔴\n' ;;
+    just_finished) printf '🟡\n' ;;
+    working)       printf '🔵\n' ;;
+    *)             printf '⚪\n' ;;
   esac
 }
 
