@@ -22,6 +22,13 @@ menu bar:  ✦ 3  ● arthur
 | `◐` | Working | blue |
 | `·` | Idle for over 5 minutes | grey |
 
+The color column above only applies inside the **dropdown menu**. GNOME
+Shell's own panel widget does not support colored text for the top-bar
+button itself — this is a GNOME Shell/Argos limitation (not Ubuntu-specific,
+and not something copilot-bar can work around: no `color=` value has any
+effect there), so in the bar itself only the icon shape distinguishes state,
+never its color.
+
 ## Install
 
 ### 1. Requirements
