@@ -22,12 +22,15 @@ EVENTS_TAIL_LINES="${COPILOT_BAR_EVENTS_TAIL_LINES:-500}"
 #
 # Tracked across the reduce: inTurn (are we between assistant.turn_start and
 # .turn_end), pendingPerm (permission.requested request ids still waiting on
-# a matching permission.completed, restricted to kind shell/write/url — the
-# genuine user-facing Yes/No prompts; kind "hook" is a silent auto-decision
-# and never blocks anyone) and pendingAsk (tool.execution_start toolCallIds
-# for toolName "ask_user" still waiting on a matching tool.execution_complete
-# — the "choose between these options" dialogs, which fire no hook at all
-# but do leave this durable open/close pair in the event log).
+# a matching permission.completed — every kind observed (shell, write, url,
+# read, memory, hook) can be a genuine user-facing Yes/No prompt; "hook" in
+# particular is NOT a silent auto-decision as first assumed — it's exactly
+# the "RTK auto-rewrite" hook-permission dialog confirmed interactively via
+# denied-interactively-by-user outcomes in real event logs, so no kind is
+# filtered out) and pendingAsk (tool.execution_start toolCallIds for
+# toolName "ask_user" still waiting on a matching tool.execution_complete —
+# the "choose between these options" dialogs, which fire no hook at all but
+# do leave this durable open/close pair in the event log).
 #
 # needs_input wins over everything else: as long as either pending set is
 # non-empty the session stays needs_input regardless of turn boundaries.
@@ -54,10 +57,7 @@ reduce .[] as $e (
       .inTurn = false
       | (if (.pendingPerm | length == 0) and (.pendingAsk | length == 0) then .state = "idle" | .updated = $ts else . end)
     elif $t == "permission.requested" then
-      ($e.data.permissionRequest.kind // $e.data.kind) as $kind
-      | if ($kind == "shell" or $kind == "write" or $kind == "url") then
-          .pendingPerm[$e.data.requestId] = true | .state = "needs_input" | .updated = $ts
-        else . end
+      .pendingPerm[$e.data.requestId] = true | .state = "needs_input" | .updated = $ts
     elif $t == "permission.completed" then
       .pendingPerm |= del(.[$e.data.requestId])
       | (if (.pendingPerm | length == 0) and (.pendingAsk | length == 0) then .state = (if .inTurn then "working" else "idle" end) | .updated = $ts else . end)

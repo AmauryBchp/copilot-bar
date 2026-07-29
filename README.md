@@ -77,10 +77,15 @@ never fires for `ask_user`-style "choose between these options" dialogs, so
 a session could sit waiting on the user while the bar still showed
 `working`. Reading `events.jsonl` directly covers that case (via a
 `tool.execution_start` for `toolName: "ask_user"` with no matching
-`tool.execution_complete`) along with genuine permission prompts (via
-`permission.requested`/`permission.completed`, restricted to `kind` values
-`shell`/`write`/`url` — `kind: "hook"` is a silent, non-blocking auto-decision
-and is ignored), with no hook coverage gaps.
+`tool.execution_complete`) along with every genuine permission prompt (via
+`permission.requested`/`permission.completed`, tracked for every `kind`
+observed — an earlier revision of this tool restricted this to
+`shell`/`write`/`url` and wrongly treated `kind: "hook"` as a silent,
+non-blocking auto-decision; that was wrong, `kind: "hook"` is exactly the
+"RTK auto-rewrite" hook-permission dialog a user actually clicks Yes/No on,
+confirmed by `denied-interactively-by-user` outcomes in real event logs —
+so it's tracked the same as every other kind now), with no hook coverage
+gaps.
 
 - **`~/.copilot/session-state/` is undocumented and internal.** Its format
   (`events.jsonl` event types and field names, `workspace.yaml` layout,
