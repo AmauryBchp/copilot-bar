@@ -1,10 +1,7 @@
 # copilot-bar
 
-Keep an eye on every running `copilot-cli` session at once, from your GNOME
-top bar and from the keyboard — a port of
-[jcgay/claude-bar](https://github.com/jcgay/claude-bar) from Claude Code +
-macOS to GitHub Copilot CLI + Ubuntu. Design rationale lives in
-`docs/superpowers/specs/2026-07-28-copilot-bar-design.md`.
+Keep an eye on every running `copilot-cli` session at once, from your GNOME top bar and from the keyboard — a port of [jcgay/claude-bar](https://github.com/jcgay/claude-bar) from Claude Code + macOS toGitHub Copilot CLI + Ubuntu.
+Design rationale lives in `docs/superpowers/specs/2026-07-28-copilot-bar-design.md`.
 
 ```
 menu bar:  ✦ 3  🔴 arthur
@@ -47,10 +44,10 @@ window, so it will not work on native Wayland.
 
 ```bash
 mkdir -p ~/.config/argos
-ln -sfn "$PWD/bar/copilot_sessions.sh" ~/.config/argos/copilot-bar.20s.sh
+ln -sfn "$PWD/bar/copilot_sessions.sh" ~/.config/argos/copilot-bar.10s.sh
 ```
 
-The `20s` in that filename is the refresh interval — Argos reads it from the
+The `10s` in that filename is the refresh interval — Argos reads it from the
 name. Symlinking rather than copying keeps the checkout as the source of
 truth, so `git pull` is the whole update path.
 
