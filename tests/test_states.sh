@@ -175,6 +175,39 @@ check "with wmctrl missing the dropdown says why" \
   "wmctrl not found in PATH | color=#fb4934" \
   "$(printf '%s\n' "$no_wmctrl_out" | sed -n '/^---$/,$p' | tail -n +2)"
 
+# --- copilot-bar-feed --------------------------------------------------------
+
+feed_out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" ./bin/copilot-bar-feed)
+
+check "the feed is valid JSON" \
+  "ok" "$(printf '%s\n' "$feed_out" | jq -e . >/dev/null 2>&1 && echo ok)"
+
+check "the feed is ordered by urgency, then by longest wait" \
+  "● arthur ○ recent ◐ deltatom · pipe∣farm" \
+  "$(printf '%s\n' "$feed_out" | jq -r '[.items[].title] | join(" ")')"
+
+check "every item carries its pid" \
+  "$$ $$ $$ $$" "$(printf '%s\n' "$feed_out" | jq -r '[.items[].pid] | join(" ")')"
+
+check "the subtitle carries state, age and pid" \
+  "1" "$(printf '%s\n' "$feed_out" | jq -r '.items[0].subtitle' | grep -cE "^needs input · [0-9]+[smh] · pid $$\$")"
+
+feed_empty=$(COPILOT_BAR_SESSIONS_DIR="$empty_dir" ./bin/copilot-bar-feed)
+
+check "with no sessions the feed says so, unactionably" \
+  "No Copilot CLI sessions " \
+  "$(printf '%s\n' "$feed_empty" | jq -r '.items[0] | "\(.title) \(.pid // "")"')"
+
+no_jq_feed=$(PATH=/nonexistent /bin/bash "$PWD/bin/copilot-bar-feed" 2>/dev/null)
+
+check "with jq missing the feed reports the error, not a crash" \
+  '{"items":[],"error":"jq not found in PATH"}' "$no_jq_feed"
+
+no_wmctrl_feed=$(PATH="$(dirname "$(command -v jq)")" /bin/bash "$PWD/bin/copilot-bar-feed")
+
+check "with wmctrl missing (but jq present) the feed reports that error" \
+  '{"items":[],"error":"wmctrl not found in PATH"}' "$no_wmctrl_feed"
+
 if (( failures )); then
   printf '\n%d failure(s)\n' "$failures"
   exit 1
