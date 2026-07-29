@@ -74,6 +74,30 @@ check "59m stays in minutes" "59m" "$(format_age 3599999)"
 check "an hour is hours" "1h" "$(format_age 3600000)"
 check "three hours" "3h" "$(format_age 10800000)"
 
+# --- read_sessions ----------------------------------------------------------
+# Fixtures carry PID_PLACEHOLDER so we can substitute a pid that is genuinely
+# running (our own) and prove the dead-process filter matters: read_sessions
+# itself does not filter dead pids (callers do, via kill -0), so this only
+# proves the raw TSV rows come through correctly.
+
+fixture_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir"' EXIT
+now_ms=$(( $(date +%s) * 1000 ))
+for f in tests/fixtures/*.json; do
+  sed -e "s/PID_PLACEHOLDER/$$/" -e "s/TIMESTAMP_PLACEHOLDER/$now_ms/" "$f" > "$fixture_dir/$(basename "$f")"
+done
+
+rows=$(SESSIONS_DIR="$fixture_dir" read_sessions)
+
+check "read_sessions emits one row per well-formed file" \
+  "5" "$(printf '%s\n' "$rows" | grep -c .)"
+
+check "read_sessions carries the project name through" \
+  "1" "$(printf '%s\n' "$rows" | grep -cF $'\tdeltatom\t')"
+
+check "the unparseable file produces no row and does not abort the batch" \
+  "0" "$(printf '%s\n' "$rows" | grep -cF 'unparseable')"
+
 if (( failures )); then
   printf '\n%d failure(s)\n' "$failures"
   exit 1
