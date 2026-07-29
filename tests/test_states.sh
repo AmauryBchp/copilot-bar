@@ -276,6 +276,34 @@ chmod +x "$fake_bin/ps"
 check "a pid with no controlling terminal fails with a clear message" \
   "1" "$(PATH="$fake_bin:$PATH" COPILOT_BAR_DEV_PREFIX="$fake_dev" ./focus/copilot_focus.sh 4242 2>&1 >/dev/null | grep -cF 'no controlling terminal')"
 
+cat > "$fake_bin/ps" << 'EOF'
+#!/usr/bin/env bash
+echo " faketty0"
+EOF
+chmod +x "$fake_bin/ps"
+
+cat > "$fake_bin/wmctrl" << EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -l)
+    echo "0x0400001  0 host Some Other Window"
+    ;;
+  -ia)
+    echo "activated \$2" >> "$focus_fixture_dir/wmctrl_calls.log"
+    ;;
+esac
+EOF
+chmod +x "$fake_bin/wmctrl"
+
+focus_no_window=$(PATH="$fake_bin:$PATH" COPILOT_BAR_DEV_PREFIX="$fake_dev" ./focus/copilot_focus.sh 9999 2>&1; echo "exit:$?")
+
+check "no window found exits 1 and prints error to stderr" \
+  "exit:1" "$(printf '%s\n' "$focus_no_window" | tail -1)"
+
+check "no window found prints the correct error message" \
+  "1" "$(printf '%s\n' "$focus_no_window" | grep -cF 'no window found for pid 9999')"
+
+
 if (( failures )); then
   printf '\n%d failure(s)\n' "$failures"
   exit 1
