@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# JSON session feed for the Ulauncher extension (ulauncher/copilot-bar/main.py).
+#
+# Reuses lib/state.sh's state functions wholesale — the only new logic here is
+# the urgency ranking and the JSON assembly. jq builds the JSON rather than
+# printf, because a project directory holding a quote or backslash would
+# otherwise emit a feed the extension cannot parse.
+set -uo pipefail
+
+SCRIPT_DIR="$(dirname "$(/usr/bin/readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=../lib/state.sh
+source "$SCRIPT_DIR/../lib/state.sh"
+
+# One TSV row per live session: rank, age, title, subtitle, pid. Rank ascending
+# then age descending within a rank, so the longest-waiting session in a given
+# state sorts first — the one you meant among several needing input.
+session_rows() {
+  local now=$1
+  local pid sid project state updated display age
+
+  while IFS=$'\t' read -r pid sid project state updated; do
+    [[ -n "$pid" ]] || continue
+    kill -0 "$pid" 2>/dev/null || continue
+    [[ "$updated" =~ ^[0-9]+$ ]] || continue
+
+    age=$(( now - updated ))
+    display=$(derive_display_state "$state" "$updated" "$now")
+    # Escape pipes like the Argos renderer does
+    project=${project//|/∣}
+
+    printf '%s\t%s\t%s %s\t%s · %s · pid %s\t%s\n' \
+      "$(state_rank "$display")" "$age" \
+      "$(state_icon "$display")" "$project" \
+      "$(state_label "$display")" "$(format_age "$age")" "$pid" \
+      "$pid"
+  done < <(read_sessions)
+}
+
+feed() {
+  session_rows "$1" \
+    | sort -t$'\t' -k1,1n -k2,2nr \
+    | cut -f3- \
+    | jq -Rs '
+        [ split("\n")[]
+          | select(length > 0)
+          | split("\t")
+          | { title: .[0], subtitle: .[1], pid: .[2] } ]
+        | if length == 0
+          then [ { title: "No Copilot CLI sessions", pid: null } ]
+          else . end
+        | { items: . }
+      '
+}
+
+main() {
+  if ! command -v jq >/dev/null; then
+    printf '{"items":[],"error":"jq not found in PATH"}\n'
+    return 0
+  fi
+  if ! command -v wmctrl >/dev/null; then
+    printf '{"items":[],"error":"wmctrl not found in PATH"}\n'
+    return 0
+  fi
+
+  feed "$(( $(date +%s) * 1000 ))"
+}
+
+main "$@"
