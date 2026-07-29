@@ -1,0 +1,19 @@
+{
+  "required_api_version": "2",
+  "name": "copilot-bar",
+  "description": "List live GitHub Copilot CLI sessions and focus their terminal window.",
+  "developer_name": "AmauryBchp",
+  "icon": "images/icon.png",
+  "options": {
+    "query_debounce": 0.1
+  },
+  "preferences": [
+    {
+      "id": "copilot_bar_kw",
+      "type": "keyword",
+      "name": "Copilot sessions",
+      "description": "List live Copilot CLI sessions",
+      "default_value": "cc"
+    }
+  ]
+}
