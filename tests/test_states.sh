@@ -90,13 +90,90 @@ done
 rows=$(SESSIONS_DIR="$fixture_dir" read_sessions)
 
 check "read_sessions emits one row per well-formed file" \
-  "5" "$(printf '%s\n' "$rows" | grep -c .)"
+  "6" "$(printf '%s\n' "$rows" | grep -c .)"
 
 check "read_sessions carries the project name through" \
   "1" "$(printf '%s\n' "$rows" | grep -cF $'\tdeltatom\t')"
 
 check "the unparseable file produces no row and does not abort the batch" \
   "0" "$(printf '%s\n' "$rows" | grep -cF 'unparseable')"
+
+# --- Argos rendering ---------------------------------------------------------
+
+out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" ./bar/copilot_sessions.sh)
+title=$(printf '%s\n' "$out" | sed -n '1p')
+menu=$(printf '%s\n' "$out" | sed -n '/^---$/,$p' | tail -n +2)
+
+check "the title counts the four well-formed live sessions" \
+  "1" "$(printf '%s' "$title" | grep -c '✦ 4')"
+
+check "the title badges the needs_input session" \
+  "arthur" "$(printf '%s' "$title" | sed -n 's/.*● \([a-z]*\).*/\1/p')"
+
+check "the title is tinted by the most urgent state" \
+  "color=#fb4934" "$(printf '%s' "$title" | sed -n 's/.*| \(color=[^ ]*\).*/\1/p')"
+
+check "the dropdown lists the working session" \
+  "1" "$(printf '%s\n' "$menu" | grep -cE '^◐ deltatom — working [0-9]+s \| color=#458588 bash=')"
+
+check "the dropdown lists the dormant session" \
+  "1" "$(printf '%s\n' "$menu" | grep -cF '· pipe∣farm — idle')"
+
+check "the dropdown lists the needs_input session" \
+  "1" "$(printf '%s\n' "$menu" | grep -cF '● arthur — needs input')"
+
+check "the dead session appears nowhere" \
+  "" "$(printf '%s\n' "$out" | grep -o 'ghost')"
+
+check "the malformed timestamp is skipped rather than crashing" \
+  "" "$(printf '%s\n' "$out" | grep -o 'broken')"
+
+check "a pipe in the project name is escaped in the dropdown" \
+  "1" "$(printf '%s\n' "$menu" | grep -cF 'pipe∣farm')"
+
+check "a raw pipe in the project name never reaches the output" \
+  "" "$(printf '%s\n' "$out" | grep -F 'pipe|farm')"
+
+check "every dropdown row is clickable" \
+  "$(printf '%s\n' "$menu" | grep -c .)" \
+  "$(printf '%s\n' "$menu" | grep -cF "bash=\"$PWD/focus/copilot_focus.sh $$\" terminal=false")"
+
+link_dir=$(mktemp -d)
+ln -s "$PWD/bar/copilot_sessions.sh" "$link_dir/copilot-bar.20s.sh"
+link_out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" "$link_dir/copilot-bar.20s.sh")
+rm -rf "$link_dir"
+
+check "run through a symlink the rows still point at the real focus script" \
+  "4" "$(printf '%s\n' "$link_out" | grep -cF "bash=\"$PWD/focus/copilot_focus.sh")"
+
+empty_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir" "$empty_dir"' EXIT
+empty_out=$(COPILOT_BAR_SESSIONS_DIR="$empty_dir" ./bar/copilot_sessions.sh)
+
+check "with no sessions the title counts zero" \
+  "✦ 0 | color=#7c6f64" "$(printf '%s\n' "$empty_out" | sed -n '1p')"
+
+check "with no sessions the dropdown says so" \
+  "No Copilot CLI sessions | color=#7c6f64" \
+  "$(printf '%s\n' "$empty_out" | sed -n '/^---$/,$p' | tail -n +2)"
+
+no_jq_out=$(PATH=/nonexistent /bin/bash "$PWD/bar/copilot_sessions.sh" 2>/dev/null)
+
+check "with jq missing the title warns instead of lying about zero" \
+  "✦ ⚠ | color=#fb4934" "$(printf '%s\n' "$no_jq_out" | sed -n '1p')"
+
+check "with jq missing the dropdown says why" \
+  "jq not found in PATH | color=#fb4934" \
+  "$(printf '%s\n' "$no_jq_out" | sed -n '/^---$/,$p' | tail -n +2)"
+
+no_wmctrl_out=$(PATH="$(dirname "$(command -v jq)")" /bin/bash "$PWD/bar/copilot_sessions.sh" 2>/dev/null)
+
+check "with wmctrl missing (but jq present) the title still warns" \
+  "✦ ⚠ | color=#fb4934" "$(printf '%s\n' "$no_wmctrl_out" | sed -n '1p')"
+
+check "with wmctrl missing the dropdown says why" \
+  "wmctrl not found in PATH | color=#fb4934" \
+  "$(printf '%s\n' "$no_wmctrl_out" | sed -n '/^---$/,$p' | tail -n +2)"
 
 if (( failures )); then
   printf '\n%d failure(s)\n' "$failures"
