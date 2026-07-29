@@ -82,25 +82,37 @@ check "three hours" "3h" "$(format_age 10800000)"
 
 fixture_dir=$(mktemp -d)
 trap 'rm -rf "$fixture_dir"' EXIT
-now_ms=$(( $(date +%s) * 1000 ))
-for f in tests/fixtures/*.json; do
-  sed -e "s/PID_PLACEHOLDER/$$/" -e "s/TIMESTAMP_PLACEHOLDER/$now_ms/" "$f" > "$fixture_dir/$(basename "$f")"
+now_epoch=$(date +%s)
+older_iso=$(date -u -d "@$((now_epoch - 60))" +'%Y-%m-%dT%H:%M:%S.000Z')
+recent_iso=$(date -u -d "@$((now_epoch - 5))" +'%Y-%m-%dT%H:%M:%S.000Z')
+old_iso=$(date -u -d "@$((now_epoch - 3 * 3600))" +'%Y-%m-%dT%H:%M:%S.000Z')
+
+cp -r tests/fixtures/session-state/. "$fixture_dir/"
+find "$fixture_dir" -type f -print0 | xargs -0 sed -i \
+  -e "s/PID_PLACEHOLDER/$$/" \
+  -e "s/OLDER_ISO/$older_iso/" \
+  -e "s/RECENT_ISO/$recent_iso/" \
+  -e "s/OLD_ISO/$old_iso/"
+# sed can't rename files; the lock filename itself carries the pid.
+for f in "$fixture_dir"/*/inuse.PID_PLACEHOLDER.lock; do
+  [[ -e "$f" ]] || continue
+  mv "$f" "$(dirname "$f")/inuse.$$.lock"
 done
 
-rows=$(SESSIONS_DIR="$fixture_dir" read_sessions)
+rows=$(SESSION_STATE_DIR="$fixture_dir" read_sessions)
 
-check "read_sessions emits one row per well-formed file" \
-  "6" "$(printf '%s\n' "$rows" | grep -c .)"
+check "read_sessions emits one row per well-formed session" \
+  "5" "$(printf '%s\n' "$rows" | grep -c .)"
 
 check "read_sessions carries the project name through" \
   "1" "$(printf '%s\n' "$rows" | grep -cF $'\tdeltatom\t')"
 
-check "the unparseable file produces no row and does not abort the batch" \
-  "0" "$(printf '%s\n' "$rows" | grep -cF 'unparseable')"
+check "the unparseable session produces no row and does not abort the batch" \
+  "0" "$(printf '%s\n' "$rows" | grep -cF 'broken')"
 
 # --- Argos rendering ---------------------------------------------------------
 
-out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" ./bar/copilot_sessions.sh)
+out=$(COPILOT_BAR_SESSION_STATE_DIR="$fixture_dir" ./bar/copilot_sessions.sh)
 title=$(printf '%s\n' "$out" | sed -n '1p')
 menu=$(printf '%s\n' "$out" | sed -n '/^---$/,$p' | tail -n +2)
 
@@ -140,7 +152,7 @@ check "every dropdown row is clickable" \
 
 link_dir=$(mktemp -d)
 ln -s "$PWD/bar/copilot_sessions.sh" "$link_dir/copilot-bar.20s.sh"
-link_out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" "$link_dir/copilot-bar.20s.sh")
+link_out=$(COPILOT_BAR_SESSION_STATE_DIR="$fixture_dir" "$link_dir/copilot-bar.20s.sh")
 rm -rf "$link_dir"
 
 check "run through a symlink the rows still point at the real focus script" \
@@ -148,7 +160,7 @@ check "run through a symlink the rows still point at the real focus script" \
 
 empty_dir=$(mktemp -d)
 trap 'rm -rf "$fixture_dir" "$empty_dir"' EXIT
-empty_out=$(COPILOT_BAR_SESSIONS_DIR="$empty_dir" ./bar/copilot_sessions.sh)
+empty_out=$(COPILOT_BAR_SESSION_STATE_DIR="$empty_dir" ./bar/copilot_sessions.sh)
 
 check "with no sessions the title counts zero" \
   "✦ 0 | color=#7c6f64" "$(printf '%s\n' "$empty_out" | sed -n '1p')"
@@ -177,7 +189,7 @@ check "with wmctrl missing the dropdown says why" \
 
 # --- copilot-bar-feed --------------------------------------------------------
 
-feed_out=$(COPILOT_BAR_SESSIONS_DIR="$fixture_dir" ./bin/copilot-bar-feed)
+feed_out=$(COPILOT_BAR_SESSION_STATE_DIR="$fixture_dir" ./bin/copilot-bar-feed)
 
 check "the feed is valid JSON" \
   "ok" "$(printf '%s\n' "$feed_out" | jq -e . >/dev/null 2>&1 && echo ok)"
@@ -192,7 +204,7 @@ check "every item carries its pid" \
 check "the subtitle carries state, age and pid" \
   "1" "$(printf '%s\n' "$feed_out" | jq -r '.items[0].subtitle' | grep -cE "^needs input · [0-9]+[smh] · pid $$\$")"
 
-feed_empty=$(COPILOT_BAR_SESSIONS_DIR="$empty_dir" ./bin/copilot-bar-feed)
+feed_empty=$(COPILOT_BAR_SESSION_STATE_DIR="$empty_dir" ./bin/copilot-bar-feed)
 
 check "with no sessions the feed says so, unactionably" \
   "No Copilot CLI sessions " \

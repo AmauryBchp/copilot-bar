@@ -34,23 +34,7 @@ Argos (GNOME Shell extension) and Ulauncher are assumed already installed.
 This has only been tested on X11 — `wmctrl` needs a real or XWayland-visible
 window, so it will not work on native Wayland.
 
-### 2. The Copilot CLI plugin
-
-From your checkout of this repository:
-
-```bash
-copilot plugin install "$PWD/plugin"
-```
-
-This maintains `~/.copilot-bar/sessions/<pid>.json` for every live session —
-see `docs/superpowers/specs/2026-07-28-copilot-bar-design.md` for exactly
-which hook sets which state. Verify it's live:
-
-```bash
-copilot plugin list   # should include copilot-bar
-```
-
-### 3. Argos menu bar
+### 2. Argos menu bar
 
 ```bash
 mkdir -p ~/.config/argos
@@ -61,7 +45,7 @@ The `20s` in that filename is the refresh interval — Argos reads it from the
 name. Symlinking rather than copying keeps the checkout as the source of
 truth, so `git pull` is the whole update path.
 
-### 4. Ulauncher extension
+### 3. Ulauncher extension
 
 ```bash
 ln -sfn "$PWD/ulauncher/copilot-bar" ~/.local/share/ulauncher/extensions/copilot-bar
@@ -72,7 +56,7 @@ keyword is `cc` — type it, or bind Ulauncher's own global hotkey
 (Ulauncher Preferences → Shortcuts) to open it directly. Selecting a session
 focuses its terminal window.
 
-### 5. Window focus
+### 4. Window focus
 
 No extra setup: `focus/copilot_focus.sh` uses `wmctrl` and an OSC-title marker
 written to the session's own tty — see the design spec for how, and for the
@@ -82,24 +66,58 @@ the switch).
 
 ### Known limitations
 
-The Copilot CLI plugin's `notification` and `stop` hooks (which drive the
-`needs_input` red-badge and `idle` states) were built against payload shapes
-that were not confirmed against a real interactive `copilot` session. The
-`needs_input` and `idle` states may not fire exactly as expected until a
-human verifies this with a real tty. See plugin development notes for
-verification instructions.
+**No plugin or hook install is required.** copilot-bar reads session state
+directly from Copilot CLI's own per-session event log at
+`~/.copilot/session-state/<uuid>/events.jsonl`, present for every session
+without any configuration. An earlier version of this tool used a
+hooks-based plugin instead — that approach is documented in git history
+(see commits up to and including `f8e6907`) but has been fully replaced,
+because it turned out to have a real gap: the CLI's `notification` hook
+never fires for `ask_user`-style "choose between these options" dialogs, so
+a session could sit waiting on the user while the bar still showed
+`working`. Reading `events.jsonl` directly covers that case (via a
+`tool.execution_start` for `toolName: "ask_user"` with no matching
+`tool.execution_complete`) along with genuine permission prompts (via
+`permission.requested`/`permission.completed`, restricted to `kind` values
+`shell`/`write`/`url` — `kind: "hook"` is a silent, non-blocking auto-decision
+and is ignored), with no hook coverage gaps.
+
+- **`~/.copilot/session-state/` is undocumented and internal.** Its format
+  (`events.jsonl` event types and field names, `workspace.yaml` layout,
+  `inuse.<pid>.lock` naming) is not part of any public Copilot CLI API and
+  could change without notice in a future CLI release, unlike the
+  documented hooks API the old plugin relied on. If a future CLI version
+  changes this layout, `read_sessions()` in `lib/state.sh` is the single
+  place that needs updating.
+- **`inuse.<pid>.lock` files can outlive their process.** They are written
+  by the CLI per session directory but are not reliably cleaned up when a
+  session crashes or is killed, so `read_sessions()` does not trust their
+  mere existence — every consumer (`bar/copilot_sessions.sh`,
+  `bin/copilot-bar-feed`) still filters dead pids with `kill -0` before
+  rendering a row, exactly as before.
+- **`events.jsonl` can grow large** (17MB+ observed for a long-running
+  session), so only the trailing `COPILOT_BAR_EVENTS_TAIL_LINES` (default
+  500) lines are read per refresh, not the whole file. A session with an
+  unusually bursty tail (hundreds of tool calls between the last
+  turn-boundary and now) could in theory scroll the relevant turn-start out
+  of that window; raise the env var if that's ever observed in practice.
 
 ## How it works
 
-See `docs/superpowers/specs/2026-07-28-copilot-bar-design.md` for the full
-design: the state machine driven by Copilot CLI's hooks, the session file
-schema, and the focus algorithm.
+See `docs/superpowers/specs/2026-07-28-copilot-bar-design.md` for the
+original design rationale (menu bar layout, focus algorithm, Ulauncher
+integration). The state machine itself was rewritten after that spec was
+written: `lib/state.sh`'s `read_sessions()` now derives each session's raw
+state (`working` / `needs_input` / `idle`) by tailing its
+`~/.copilot/session-state/<uuid>/events.jsonl` and reducing over
+`assistant.turn_start`/`turn_end`, `permission.requested`/`.completed`, and
+`tool.execution_start`/`.complete` events with a small `jq` state machine —
+see the comments directly above `read_sessions()` for the exact rules.
 
 ## Development
 
 ```bash
-./tests/test_states.sh          # state derivation, rendering, feed, focus
-./tests/test_plugin_hooks.sh    # plugin hook behavior
+./tests/test_states.sh                    # state derivation, rendering, feed, focus
 python3 tests/test_ulauncher_main.py -v   # Ulauncher extension logic
 ```
 
