@@ -47,10 +47,10 @@ window, so it will not work on native Wayland.
 
 ```bash
 mkdir -p ~/.config/argos
-ln -sfn "$PWD/bar/copilot_sessions.sh" ~/.config/argos/copilot-bar.20s.sh
+ln -sfn "$PWD/bar/copilot_sessions.sh" ~/.config/argos/copilot-bar.10s.sh
 ```
 
-The `20s` in that filename is the refresh interval — Argos reads it from the
+The `10s` in that filename is the refresh interval — Argos reads it from the
 name. Symlinking rather than copying keeps the checkout as the source of
 truth, so `git pull` is the whole update path.
 
