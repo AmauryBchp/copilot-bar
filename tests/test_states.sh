@@ -208,6 +208,74 @@ no_wmctrl_feed=$(PATH="$(dirname "$(command -v jq)")" /bin/bash "$PWD/bin/copilo
 check "with wmctrl missing (but jq present) the feed reports that error" \
   '{"items":[],"error":"wmctrl not found in PATH"}' "$no_wmctrl_feed"
 
+# --- window focus ------------------------------------------------------------
+# wmctrl and ps are stubbed: a real X11 window and a real /dev/pts entry can't
+# be created in a test. The stub wmctrl reads/writes the marker through a
+# plain file under COPILOT_BAR_DEV_PREFIX instead of a real tty device, and
+# the stub ps reports a fixed fake tty name for any pid.
+
+focus_fixture_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir" "$empty_dir" "$focus_fixture_dir"' EXIT
+
+fake_bin="$focus_fixture_dir/bin"
+fake_dev="$focus_fixture_dir/dev"
+mkdir -p "$fake_bin" "$fake_dev"
+: > "$fake_dev/faketty0"
+printf 'wmctrl calls:\n' > "$focus_fixture_dir/wmctrl_calls.log"
+
+cat > "$fake_bin/ps" << 'EOF'
+#!/usr/bin/env bash
+echo " faketty0"
+EOF
+chmod +x "$fake_bin/ps"
+
+cat > "$fake_bin/wmctrl" << EOF
+#!/usr/bin/env bash
+TITLE_FILE="$fake_dev/faketty0"
+case "\$1" in
+  -l)
+    raw=\$(cat "\$TITLE_FILE" 2>/dev/null)
+    title=\$(printf '%s' "\$raw" | sed -n 's/.*\\x1b\\]2;\\(.*\\)\\x07.*/\\1/p')
+    [[ -z "\$title" ]] && title="Terminator - old title"
+    echo "0x0400001  0 host \$title"
+    ;;
+  -ia)
+    echo "activated \$2" >> "$focus_fixture_dir/wmctrl_calls.log"
+    ;;
+esac
+EOF
+chmod +x "$fake_bin/wmctrl"
+
+focus_result=$(PATH="$fake_bin:$PATH" COPILOT_BAR_DEV_PREFIX="$fake_dev" ./focus/copilot_focus.sh 4242; echo "exit:$?")
+
+check "focusing a session activates its window" \
+  "1" "$(grep -c 'activated 0x0400001' "$focus_fixture_dir/wmctrl_calls.log")"
+
+check "focusing a session exits 0" \
+  "exit:0" "$(printf '%s\n' "$focus_result" | tail -1)"
+
+check "focusing a session restores the previous title" \
+  "1" "$(cat -v "$fake_dev/faketty0" | grep -cF 'Terminator - old title')"
+
+check "an empty argument prints usage and exits 64" \
+  "64" "$(./focus/copilot_focus.sh >/dev/null 2>&1; echo $?)"
+
+check "a non-numeric argument prints usage and exits 64" \
+  "64" "$(./focus/copilot_focus.sh abc >/dev/null 2>&1; echo $?)"
+
+check "a PATH without wmctrl fails with a clear message" \
+  "1" "$(PATH=/bin ./focus/copilot_focus.sh 4242 2>&1 >/dev/null | grep -cF 'wmctrl not found')"
+
+rm -f "$fake_dev/faketty0.notfound" # no-op, keeps shellcheck quiet about unused var if any
+cat > "$fake_bin/ps" << 'EOF'
+#!/usr/bin/env bash
+echo " ?"
+EOF
+chmod +x "$fake_bin/ps"
+
+check "a pid with no controlling terminal fails with a clear message" \
+  "1" "$(PATH="$fake_bin:$PATH" COPILOT_BAR_DEV_PREFIX="$fake_dev" ./focus/copilot_focus.sh 4242 2>&1 >/dev/null | grep -cF 'no controlling terminal')"
+
 if (( failures )); then
   printf '\n%d failure(s)\n' "$failures"
   exit 1
