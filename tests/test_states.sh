@@ -61,10 +61,10 @@ check "just_finished is yellow" "#b57614" "$(state_color just_finished)"
 check "working is blue" "#458588" "$(state_color working)"
 check "dormant is grey" "#7c6f64" "$(state_color dormant)"
 
-check "needs_input shows a filled dot" "●" "$(state_icon needs_input)"
-check "just_finished shows a hollow dot" "○" "$(state_icon just_finished)"
-check "working shows a half dot" "◐" "$(state_icon working)"
-check "dormant shows a middot" "·" "$(state_icon dormant)"
+check "needs_input shows a red circle" "🔴" "$(state_icon needs_input)"
+check "just_finished shows a yellow circle" "🟡" "$(state_icon just_finished)"
+check "working shows a blue circle" "🔵" "$(state_icon working)"
+check "dormant shows a white circle" "⚪" "$(state_icon dormant)"
 
 check "seconds under a minute" "12s" "$(format_age 12000)"
 check "zero is zero seconds" "0s" "$(format_age 0)"
@@ -120,19 +120,19 @@ check "the title counts the four well-formed live sessions" \
   "1" "$(printf '%s' "$title" | grep -c '✦ 4')"
 
 check "the title badges the needs_input session" \
-  "arthur" "$(printf '%s' "$title" | sed -n 's/.*● \([a-z]*\).*/\1/p')"
+  "arthur" "$(printf '%s' "$title" | sed -n 's/.*🔴 \([a-z]*\).*/\1/p')"
 
 check "the title is tinted by the most urgent state" \
   "color=#fb4934" "$(printf '%s' "$title" | sed -n 's/.*| \(color=[^ ]*\).*/\1/p')"
 
 check "the dropdown lists the working session" \
-  "1" "$(printf '%s\n' "$menu" | grep -cE '^◐ deltatom — working [0-9]+s \| color=#458588 bash=')"
+  "1" "$(printf '%s\n' "$menu" | grep -cE '^🔵 deltatom — working [0-9]+s \| color=#458588 bash=')"
 
 check "the dropdown lists the dormant session" \
-  "1" "$(printf '%s\n' "$menu" | grep -cF '· pipe∣farm — idle')"
+  "1" "$(printf '%s\n' "$menu" | grep -cF '⚪ pipe∣farm — idle')"
 
 check "the dropdown lists the needs_input session" \
-  "1" "$(printf '%s\n' "$menu" | grep -cF '● arthur — needs input')"
+  "1" "$(printf '%s\n' "$menu" | grep -cF '🔴 arthur — needs input')"
 
 check "the dead session appears nowhere" \
   "" "$(printf '%s\n' "$out" | grep -o 'ghost')"
@@ -195,7 +195,7 @@ check "the feed is valid JSON" \
   "ok" "$(printf '%s\n' "$feed_out" | jq -e . >/dev/null 2>&1 && echo ok)"
 
 check "the feed is ordered by urgency, then by longest wait" \
-  "● arthur ○ recent ◐ deltatom · pipe∣farm" \
+  "🔴 arthur 🟡 recent 🔵 deltatom ⚪ pipe∣farm" \
   "$(printf '%s\n' "$feed_out" | jq -r '[.items[].title] | join(" ")')"
 
 check "every item carries its pid" \

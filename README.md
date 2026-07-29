@@ -7,34 +7,36 @@ macOS to GitHub Copilot CLI + Ubuntu. Design rationale lives in
 `docs/superpowers/specs/2026-07-28-copilot-bar-design.md`.
 
 ```
-menu bar:  ✦ 3  ● arthur
+menu bar:  ✦ 3  🔴 arthur
 
 ── dropdown ──────────────────
-● arthur      needs input 8s
-◐ deltatom    working 1m
-· pipe∣farm   idle 3h
+🔴 arthur      needs input 8s
+🔵 deltatom    working 1m
+⚪ pipe∣farm   idle 3h
 ```
 
 | Icon | State | Color |
 | --- | --- | --- |
-| `●` | Needs input (permission prompt) | red |
-| `○` | Finished within the last 5 minutes | yellow |
-| `◐` | Working | blue |
-| `·` | Idle for over 5 minutes | grey |
+| `🔴` | Needs input (permission prompt) | red |
+| `🟡` | Finished within the last 5 minutes | yellow |
+| `🔵` | Working | blue |
+| `⚪` | Idle for over 5 minutes | grey |
 
-The color column above only applies inside the **dropdown menu**. GNOME
-Shell's own panel widget does not support colored text for the top-bar
-button itself — this is a GNOME Shell/Argos limitation (not Ubuntu-specific,
-and not something copilot-bar can work around: no `color=` value has any
-effect there), so in the bar itself only the icon shape distinguishes state,
-never its color.
+The icons above are color emoji, not colored text: GNOME Shell's own panel
+widget does not support colored *text* for the top-bar button itself — a
+GNOME Shell/Argos limitation (not Ubuntu-specific, and not something
+copilot-bar can work around: no `color=` attribute has any effect there).
+Color emoji sidestep this entirely, since they're rendered as actual colored
+glyphs rather than text with a color attribute — so the bar itself *is*
+colored, both in the top-bar button and the dropdown, as long as a color
+emoji font is installed (see requirements below).
 
 ## Install
 
 ### 1. Requirements
 
 ```bash
-sudo apt install jq wmctrl
+sudo apt install jq wmctrl fonts-noto-color-emoji
 ```
 
 Argos (GNOME Shell extension) and Ulauncher are assumed already installed.
