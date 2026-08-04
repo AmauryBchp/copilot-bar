@@ -186,15 +186,32 @@ most_urgent() {
 # One jq invocation per session: a parse error (e.g. a truncated line at the
 # very end of a file mid-write) aborts that jq call immediately, so a single
 # broken session must not take every session after it down with it.
+#
+# Deduped one row per pid, keeping the row with the greatest stateUpdatedAt:
+# `kill -0 "$pid"` only proves *some* process holds that OS pid right now, not
+# that it's the process that created a given lock file. The OS recycles pids
+# once a process exits, and Copilot CLI itself never cleans up a session
+# directory's lock file on crash or after switching to another one (e.g. a
+# resumed/new sub-session under the same still-running process). Confirmed in
+# the wild: a month-old, long-dead session directory whose recorded pid had
+# since been reassigned to today's unrelated live session showed up alongside
+# it as a second "live" entry for the same pid, one of them stuck at whatever
+# stale idle age its last event was written. Since every genuinely current
+# session for a given pid is, by definition, the one with the most recent
+# activity, collapsing same-pid rows down to that one is correct regardless of
+# *why* they collide (recycled pid from a dead process, or several session
+# directories left behind by one long-lived live process).
 read_sessions() {
   local -a locks
-  local lockfile dir sid pid cwd project row state updated
+  local lockfile dir sid pid cwd project row state updated best_row best_updated
 
   shopt -s nullglob
   locks=("$SESSION_STATE_DIR"/*/inuse.*.lock)
   shopt -u nullglob
 
   (( ${#locks[@]} )) || return 0
+
+  local -A pid_best_row pid_best_updated
 
   for lockfile in "${locks[@]}"; do
     dir=$(dirname "$lockfile")
@@ -218,7 +235,16 @@ read_sessions() {
     row=$(tail -n "$EVENTS_TAIL_LINES" "$dir/events.jsonl" 2>/dev/null | jq -s -r "$STATE_MACHINE_JQ" 2>/dev/null)
     [[ -n "$row" ]] || continue
     IFS=$'\t' read -r state updated <<< "$row"
+    [[ "$updated" =~ ^[0-9]+$ ]] || continue
 
-    printf '%s\t%s\t%s\t%s\t%s\n' "$pid" "$sid" "$project" "$state" "$updated"
+    best_updated=${pid_best_updated[$pid]:--1}
+    if (( updated > best_updated )); then
+      pid_best_updated[$pid]=$updated
+      pid_best_row[$pid]=$(printf '%s\t%s\t%s\t%s\t%s' "$pid" "$sid" "$project" "$state" "$updated")
+    fi
+  done
+
+  for pid in "${!pid_best_row[@]}"; do
+    printf '%s\n' "${pid_best_row[$pid]}"
   done
 }
