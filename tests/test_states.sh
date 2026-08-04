@@ -76,27 +76,57 @@ check "three hours" "3h" "$(format_age 10800000)"
 
 # --- read_sessions ----------------------------------------------------------
 # Fixtures carry PID_PLACEHOLDER so we can substitute a pid that is genuinely
-# running (our own) and prove the dead-process filter matters: read_sessions
-# itself does not filter dead pids (callers do, via kill -0), so this only
-# proves the raw TSV rows come through correctly.
+# running and prove the dead-process filter matters: read_sessions itself
+# does not filter dead pids (callers do, via kill -0), so this only proves
+# the raw TSV rows come through correctly.
+#
+# Each "live" fixture gets its OWN real background pid rather than sharing
+# the test's own $$: distinct sessions have distinct OS pids in reality, and
+# collapsing them onto one shared pid would make it impossible to tell a
+# genuine dedup bug from the dedup-by-pid fix working as intended. The one
+# deliberate exception is stale_recycled_pid, which is pinned to
+# live_working's pid on purpose (see below).
 
 fixture_dir=$(mktemp -d)
-trap 'rm -rf "$fixture_dir"' EXIT
+sleep 300 & pid_arthur=$!
+sleep 300 & pid_recent=$!
+sleep 300 & pid_deltatom=$!
+sleep 300 & pid_pipe=$!
+trap 'rm -rf "$fixture_dir"; kill "$pid_arthur" "$pid_recent" "$pid_deltatom" "$pid_pipe" 2>/dev/null' EXIT
 now_epoch=$(date +%s)
 older_iso=$(date -u -d "@$((now_epoch - 60))" +'%Y-%m-%dT%H:%M:%S.000Z')
 recent_iso=$(date -u -d "@$((now_epoch - 5))" +'%Y-%m-%dT%H:%M:%S.000Z')
 old_iso=$(date -u -d "@$((now_epoch - 3 * 3600))" +'%Y-%m-%dT%H:%M:%S.000Z')
+ancient_iso=$(date -u -d "@$((now_epoch - 770 * 3600))" +'%Y-%m-%dT%H:%M:%S.000Z')
 
 cp -r tests/fixtures/session-state/. "$fixture_dir/"
 find "$fixture_dir" -type f -print0 | xargs -0 sed -i \
-  -e "s/PID_PLACEHOLDER/$$/" \
   -e "s/OLDER_ISO/$older_iso/" \
   -e "s/RECENT_ISO/$recent_iso/" \
-  -e "s/OLD_ISO/$old_iso/"
-# sed can't rename files; the lock filename itself carries the pid.
-for f in "$fixture_dir"/*/inuse.PID_PLACEHOLDER.lock; do
-  [[ -e "$f" ]] || continue
-  mv "$f" "$(dirname "$f")/inuse.$$.lock"
+  -e "s/OLD_ISO/$old_iso/" \
+  -e "s/ANCIENT_ISO/$ancient_iso/"
+
+# stale_recycled_pid is pinned to live_working's pid on purpose: it
+# reproduces a real-world case where an old, long-dead session directory's
+# recorded pid was later recycled by an unrelated live process (here,
+# live_working's). read_sessions must collapse the two down to the one with
+# the freshest activity rather than emitting both.
+declare -A fixture_pid=(
+  [live_needs_input]="$pid_arthur"
+  [live_just_finished]="$pid_recent"
+  [live_working]="$pid_deltatom"
+  [live_dormant]="$pid_pipe"
+  [unparseable]="$pid_arthur"
+  [stale_recycled_pid]="$pid_deltatom"
+)
+for name in "${!fixture_pid[@]}"; do
+  dir="$fixture_dir/$name"
+  [[ -d "$dir" ]] || continue
+  pid=${fixture_pid[$name]}
+  for f in "$dir"/inuse.PID_PLACEHOLDER.lock; do
+    [[ -e "$f" ]] || continue
+    mv "$f" "$dir/inuse.$pid.lock"
+  done
 done
 
 rows=$(SESSION_STATE_DIR="$fixture_dir" read_sessions)
@@ -109,6 +139,12 @@ check "read_sessions carries the project name through" \
 
 check "the unparseable session produces no row and does not abort the batch" \
   "0" "$(printf '%s\n' "$rows" | grep -cF 'broken')"
+
+check "read_sessions dedupes same-pid rows down to the freshest one" \
+  "1" "$(printf '%s\n' "$rows" | grep -cP "^$pid_deltatom\t")"
+
+check "read_sessions keeps the freshest same-pid row, not the stale one" \
+  "1" "$(printf '%s\n' "$rows" | grep -P "^$pid_deltatom\t" | grep -cF $'\tdeltatom\t')"
 
 # --- Argos rendering ---------------------------------------------------------
 
@@ -148,7 +184,7 @@ check "a raw pipe in the project name never reaches the output" \
 
 check "every dropdown row is clickable" \
   "$(printf '%s\n' "$menu" | grep -c .)" \
-  "$(printf '%s\n' "$menu" | grep -cF "bash=\"$PWD/focus/copilot_focus.sh $$\" terminal=false")"
+  "$(printf '%s\n' "$menu" | grep -cE "bash=\"$PWD/focus/copilot_focus.sh ($pid_arthur|$pid_recent|$pid_deltatom|$pid_pipe)\" terminal=false")"
 
 link_dir=$(mktemp -d)
 ln -s "$PWD/bar/copilot_sessions.sh" "$link_dir/copilot-bar.20s.sh"
@@ -199,10 +235,10 @@ check "the feed is ordered by urgency, then by longest wait" \
   "$(printf '%s\n' "$feed_out" | jq -r '[.items[].title] | join(" ")')"
 
 check "every item carries its pid" \
-  "$$ $$ $$ $$" "$(printf '%s\n' "$feed_out" | jq -r '[.items[].pid] | join(" ")')"
+  "$pid_arthur $pid_recent $pid_deltatom $pid_pipe" "$(printf '%s\n' "$feed_out" | jq -r '[.items[].pid] | join(" ")')"
 
 check "the subtitle carries state, age and pid" \
-  "1" "$(printf '%s\n' "$feed_out" | jq -r '.items[0].subtitle' | grep -cE "^needs input · [0-9]+[smh] · pid $$\$")"
+  "1" "$(printf '%s\n' "$feed_out" | jq -r '.items[0].subtitle' | grep -cE "^needs input · [0-9]+[smh] · pid $pid_arthur\$")"
 
 feed_empty=$(COPILOT_BAR_SESSION_STATE_DIR="$empty_dir" ./bin/copilot-bar-feed)
 
